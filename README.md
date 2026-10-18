@@ -1,36 +1,104 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# DebugAI.Studio
 
-## Getting Started
+DebugAI.Studio is a web interface for analyzing code screenshots with an AI debugging service. Upload up to three screenshots, choose a debugging strategy, and review the returned issue analysis and suggested solution.
 
-First, run the development server:
+This repository contains the frontend application. The analysis service is a separate backend and must be available for debugging requests to succeed.
+
+## Features
+
+- Upload or drag and drop up to three PNG, JPG, or WebP screenshots.
+- Choose a **Hints**, **Solution**, or **Security** analysis mode.
+- View the returned issue report, suggested fix, and a formatted response log.
+- Load the sample screenshot from the upload panel.
+- Copy the suggested solution to the clipboard.
+
+## Requirements
+
+- Node.js 20.9 or later
+- Yarn 4.12.0 (the package manager declared by this project)
+- Access to a compatible debugging backend
+
+## Getting started
+
+Install dependencies:
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+yarn install
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Configure the backend URL as described below, then start the development server:
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+```bash
+yarn dev
+```
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+Open [http://localhost:3000](http://localhost:3000) in your browser.
 
-## Learn More
+## Backend configuration
 
-To learn more about Next.js, take a look at the following resources:
+The frontend sends analysis requests to `POST /debug`. Set `NEXT_PUBLIC_API_BASE_URL` to the backend's base URL, without a trailing slash:
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+```env
+NEXT_PUBLIC_API_BASE_URL=https://your-backend.example.com
+```
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+If this variable is omitted, requests go to `/debug` on the same origin as the frontend. For local development, create a `.env.local` file in the project root and set the variable there. Restart the development server after changing environment variables.
 
-## Deploy on Vercel
+The request uses `multipart/form-data` with:
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+| Field | Type | Description |
+| --- | --- | --- |
+| `files` | File, repeated | Uploaded screenshot images |
+| `option` | String | Selected mode: `Hint`, `Solution`, or `Security` |
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+The backend should return a JSON object containing `issues` and `solution` values for the results view:
+
+```json
+{
+  "issues": "Description of the detected issues",
+  "solution": "Suggested code fix"
+}
+```
+
+The frontend expects a successful response for the request to complete. A non-success HTTP response is shown as an analysis error.
+
+## Available commands
+
+| Command | Description |
+| --- | --- |
+| `yarn dev` | Start the Next.js development server |
+| `yarn build` | Create a production build |
+| `yarn start` | Start the production server (after building) |
+| `yarn lint` | Run ESLint |
+
+## Project structure
+
+```text
+src/
+  app/
+    globals.css       Global styles and theme
+    layout.tsx        Root layout, metadata, and providers
+    page.tsx          Main application state and API request
+    providers.tsx     React Query provider
+  components/
+    ControlPanel/     Screenshot upload and analysis controls
+    Navbar/           Application header and share action
+    ResultView/       Analysis, solution, and response-log views
+  lib/
+    utils.ts          Shared utility exports
+```
+
+## Technology
+
+The frontend is built with Next.js 16, React 19, and TypeScript. Styling uses Tailwind CSS 4 and shadcn conventions; Lucide provides the interface icons.
+
+## Deployment
+
+Build and run the application with:
+
+```bash
+yarn build
+yarn start
+```
+
+Set `NEXT_PUBLIC_API_BASE_URL` in the deployment environment to the public base URL of a compatible backend. The backend must permit requests from the frontend origin and accept the multipart request described above.
