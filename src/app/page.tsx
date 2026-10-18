@@ -1,69 +1,214 @@
-import Image from "next/image";
+/* eslint-disable @typescript-eslint/no-explicit-any */
+"use client";
+
+import { useState } from "react";
+import { CheckCircle2 } from "lucide-react";
+import Navbar from "@/components/Navbar/Navbar";
+import ControlPanel from "@/components/ControlPanel/ControlPanel";
+import ResultsWorkbench from "@/components/ResultView/ResultsWorkbench";
 
 export default function Home() {
+  const [uploadedFiles, setUploadedFiles] = useState<{ name: string; url: string; fileObj?: File }[]>([]);
+  const [selectedMode, setSelectedMode] = useState("Hint");
+  const [targetLang, setTargetLang] = useState("");
+  const [contextNotes, setContextNotes] = useState("");
+  const [error, setError] = useState<string | null>(null);
+
+  const [appState, setAppState] = useState<"empty" | "loading" | "results">("empty");
+  const [loadingStageText, setLoadingStageText] = useState("Extracting code via OCR...");
+  const [loadingStageDesc, setLoadingStageDesc] = useState("Reading tokens and structure from image.");
+  const [loadingProgress, setLoadingProgress] = useState("25%");
+
+  const [currentTab, setCurrentTab] = useState<"issues" | "solution" | "json">("issues");
+  const [copied, setCopied] = useState(false);
+  const [toastMessage, setToastMessage] = useState("");
+  const [showToast, setShowToast] = useState(false);
+
+  const [issues, setIssues] = useState("");
+  const [solution, setSolution] = useState("");
+
+  const triggerToast = (msg: string) => {
+    setToastMessage(msg);
+    setShowToast(true);
+    setTimeout(() => {
+      setShowToast(false);
+    }, 3000);
+  };
+
+  const handleFilesSelected = (files: File[]) => {
+    const validImages = files.filter(f => f.type.startsWith('image/'));
+
+    if (validImages.length === 0) {
+      setError("Please select a valid image file (PNG, JPG, WebP).");
+      return;
+    }
+
+    if (uploadedFiles.length + validImages.length > 3) {
+      setError("Maximum 3 screenshots allowed per analysis session.");
+      return;
+    }
+
+    setError(null);
+
+    validImages.forEach(file => {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        const result = e.target?.result;
+        if (typeof result === "string") {
+          setUploadedFiles(prev => [...prev, { name: file.name, url: result, fileObj: file }]);
+        }
+      };
+      reader.readAsDataURL(file);
+    });
+  };
+
+  const handleRemoveFile = (index: number) => {
+    setUploadedFiles(prev => prev.filter((_, i) => i !== index));
+  };
+
+  const handleLoadSample = async () => {
+    try {
+      const sampleUrl = "https://i.ibb.co.com/C5CqZLXT/Screenshot-2026-10-19-024415.png";
+      const response = await fetch(sampleUrl);
+      const blob = await response.blob();
+      const sampleFile = new File([blob], "bug_code_sample.png", { type: "image/png" });
+
+      setUploadedFiles([{
+        name: "bug_code_sample.png",
+        url: sampleUrl,
+        fileObj: sampleFile
+      }]);
+      setError(null);
+      triggerToast("Loaded sample code screenshot!");
+    } catch {
+      setError("Failed to load sample image. Please upload an image directly.");
+    }
+  };
+
+  const executeDebuggingProcess = async () => {
+    if (uploadedFiles.length === 0) {
+      setError("Please upload a code screenshot first.");
+      return;
+    }
+
+    setError(null);
+    setAppState("loading");
+
+    const stages = [
+      { title: "Extracting code via OCR...", desc: "Reading tokens and structure from image.", fill: "25%" },
+      { title: "Running AST Error Verification...", desc: "Checking syntax trees and variable bindings.", fill: "60%" },
+      { title: "Querying Gemini Vision AI...", desc: "Synthesizing refactored fixes and hints.", fill: "90%" }
+    ];
+
+    let step = 0;
+
+    const interval = setInterval(() => {
+      if (step < stages.length) {
+        setLoadingStageText(stages[step].title);
+        setLoadingStageDesc(stages[step].desc);
+        setLoadingProgress(stages[step].fill);
+        step++;
+      }
+    }, 700);
+
+    try {
+      const formData = new FormData();
+      uploadedFiles.forEach((f) => {
+        if (f.fileObj) {
+          formData.append("files", f.fileObj);
+        }
+      });
+      if (selectedMode) {
+        formData.append("option", selectedMode);
+      } else {
+        console.error("Option is missing!");
+        return;
+      }
+
+      const API_URL = process.env.NEXT_PUBLIC_API_BASE_URL || "";
+
+      const response = await fetch(`${API_URL}/debug`, {
+        method: "POST",
+        body: formData,
+      });
+
+      if (!response.ok) {
+        throw new Error("Failed to communicate with AI Debugger backend.");
+      }
+
+      const data = await response.json();
+
+      setIssues(data.issues);
+      setSolution(data.solution);
+
+      clearInterval(interval);
+      setLoadingProgress("100%");
+      setTimeout(() => {
+        setAppState("results");
+        triggerToast("Analysis complete!");
+      }, 500);
+
+    } catch (err: any) {
+      clearInterval(interval);
+      setAppState("empty");
+      setError(err.message || "Something went wrong during analysis.");
+    }
+  };
+
+  const copySolutionCode = () => {
+    if (!solution) return;
+    navigator.clipboard.writeText(solution);
+    setCopied(true);
+    triggerToast("Solution code copied to clipboard!");
+    setTimeout(() => setCopied(false), 2000);
+  };
+
   return (
-    <div className="flex flex-col flex-1 items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex flex-1 w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert h-5 w-[100px]"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
+    <div className="text-slate-200 min-h-screen flex flex-col antialiased selection:bg-brand-500 selection:text-white bg-grid-pattern bg-dark-bg">
+      <Navbar onShare={async () => {
+        await navigator.clipboard.writeText(window.location.href);
+        triggerToast("Copied API endpoint link!");
+      }} />
+
+      <main className="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6 lg:p-8 flex flex-col lg:flex-row gap-6">
+        <ControlPanel
+          files={uploadedFiles}
+          onFilesSelected={handleFilesSelected}
+          onRemoveFile={handleRemoveFile}
+          onLoadSample={handleLoadSample}
+          selectedMode={selectedMode}
+          onSelectMode={setSelectedMode}
+          onDebug={executeDebuggingProcess}
+          error={error}
+          targetLang={targetLang}
+          setTargetLang={setTargetLang}
+          contextNotes={contextNotes}
+          setContextNotes={setContextNotes}
+          isLoading={appState === "loading"}
         />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the{" "}
-            <code className="rounded bg-black/[.06] px-1.5 py-0.5 font-mono text-[0.9em] dark:bg-white/[.08]">
-              page.tsx
-            </code>{" "}
-            file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
-        </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert h-[14px] w-4"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={14}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
-        </div>
+
+        <ResultsWorkbench
+          currentTab={currentTab}
+          setCurrentTab={setCurrentTab}
+          issues={issues}
+          solution={solution}
+          appState={appState}
+          loadingStageText={loadingStageText}
+          loadingStageDesc={loadingStageDesc}
+          loadingProgress={loadingProgress}
+          scannerImages={uploadedFiles.map(f => f.url)} // 👈 scannerImages (অ্যারে) পাস করা হলো
+          copied={copied}
+          onCopy={copySolutionCode}
+          onToast={triggerToast}
+        />
       </main>
+
+      {/* Interactive Toast Notification */}
+      <div className={`fixed bottom-6 right-6 px-4 py-3 rounded-xl bg-slate-900 border border-brand-500/40 text-white text-xs font-medium shadow-2xl flex items-center gap-2.5 transition-all duration-300 z-50 ${showToast ? "translate-y-0 opacity-100" : "translate-y-16 opacity-0"
+        }`}>
+        <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+        <span>{toastMessage}</span>
+      </div>
     </div>
   );
 }
